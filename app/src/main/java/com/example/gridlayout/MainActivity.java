@@ -2,6 +2,7 @@ package com.example.gridlayout;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+import android.content.Intent;
 import android.os.Bundle;
 import android.os.Handler;
 import android.view.View;
@@ -25,14 +26,19 @@ import java.util.Set;
 
 public class MainActivity extends AppCompatActivity {
 
-    private static final int COLUMN_COUNT = 6;
+    private static final int COLUMN_COUNT = 10;
 
     // save the TextViews of all cells in an array, so later on,
     // when a TextView is clicked, we know which cell it is
     private ArrayList<TextView> cell_tvs;
     private TextView[][] mineSweeperGrid;
     private boolean[][] isBomb;
+    private boolean[][] hasRevealed;
 
+    private boolean[][] placeFlag;
+    private int revealedTiles = 0;
+    private boolean isStateFlag = false;
+    private int flagsLeft = 4;
     private int clock = 0;
     private boolean running = false;
 
@@ -48,17 +54,18 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         cell_tvs = new ArrayList<TextView>();
-        mineSweeperGrid = new TextView[6][6];
-        isBomb = new boolean[6][6];
+        mineSweeperGrid = new TextView[12][10];
+        isBomb = new boolean[12][10];
+        hasRevealed = new boolean[12][10];
+        placeFlag = new boolean[12][10];
 
         GridLayout grid = (GridLayout) findViewById(R.id.gridLayout01);
         LayoutInflater li = LayoutInflater.from(this);
-        for (int i = 0; i<6; i++) {
-            for (int j=0; j<6; j++) {
+        for (int i = 0; i<12; i++) {
+            for (int j=0; j<10; j++) {
                 TextView tv = (TextView) li.inflate(R.layout.custom_cell_layout, grid, false);
-                //tv.setText(String.valueOf(i)+String.valueOf(j));
-                tv.setTextColor(Color.GRAY);
-                tv.setBackgroundColor(Color.GRAY);
+                tv.setTextColor(Color.GREEN);
+                tv.setBackgroundColor(Color.parseColor("lime"));
                 tv.setOnClickListener(this::onClickTV);
 
                 GridLayout.LayoutParams lp = (GridLayout.LayoutParams) tv.getLayoutParams();
@@ -71,6 +78,11 @@ public class MainActivity extends AppCompatActivity {
                 mineSweeperGrid[i][j] = tv;
             }
         }
+
+        TextView flagOrPickView = (TextView) findViewById(R.id.textViewFlag);
+        flagOrPickView.setOnClickListener(this::onClickFlagOrDig);
+        flagOrPickView.setText(getResources().getString(R.string.pick));
+
         placeRandomMines();
         runTimer();
 
@@ -78,8 +90,8 @@ public class MainActivity extends AppCompatActivity {
     private void placeRandomMines() { // part of mine sweeper set up
         int uniqueBombCnt = 0;
         while (uniqueBombCnt < 4) {
-            int r= (int)(Math.random() * 6);
-            int c = (int)(Math.random() * 6);
+            int r= (int)(Math.random() * 12);
+            int c = (int)(Math.random() * 10);
 
             if (isBomb[r][c]) { // no repeat bombs
                 continue;
@@ -101,7 +113,7 @@ public class MainActivity extends AppCompatActivity {
             int r1 = i + row[k];
             int c1 = j + col[k];
 
-            if (r1 >= 0 && r1 < 6 && c1 >= 0 && c1 < 6 && isBomb[r1][c1]) {
+            if (r1 >= 0 && r1 < 12 && c1 >= 0 && c1 < 10 && isBomb[r1][c1]) {
                 adjBombCnt++;
             }
         }
@@ -112,7 +124,7 @@ public class MainActivity extends AppCompatActivity {
         int[] row = {1,-1,0,0,1,-1,-1,1};
         int[] col = {0,0,1,-1,1,-1,1,-1};
 
-        boolean[][] hasVisited = new boolean[6][6];
+        boolean[][] hasVisited = new boolean[12][10];
         queue.add(new int[]{i, j}); // add to queue
         hasVisited[i][j] = true; //
         while (!queue.isEmpty()) {
@@ -121,13 +133,14 @@ public class MainActivity extends AppCompatActivity {
                 int r1 = curr[0] + row[k];
                 int c1 = curr[1] + col[k];
 
-                if (r1 >= 0 && r1 < 6 && c1 >= 0 && c1 < 6 && !hasVisited[r1][c1]) {
+                if (r1 >= 0 && r1 < 12 && c1 >= 0 && c1 < 10 && !hasVisited[r1][c1] && !placeFlag[r1][c1]) {
                     int adjBomb = numAdjacentMine(r1, c1);
                     if (adjBomb == 0) {
                         queue.add(new int[]{r1, c1}); // add no adj bomb to queue
                     }
                     // reveal tile (bomb adj)
                     revealTile(mineSweeperGrid[r1][c1], adjBomb);
+                    hasRevealed[r1][c1] = true;
 
                     // update has visited grid
                     hasVisited[r1][c1] = true;
@@ -135,6 +148,7 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     }
+
 
     private void revealTile(TextView tv, int numAdjBomb) {
         tv.setTextColor(Color.GRAY);
@@ -151,8 +165,12 @@ public class MainActivity extends AppCompatActivity {
     }
 
 
-    public void onEndTimer() {
+    public void onEndGame(boolean wonGame) {
         running = false;
+        Intent intent = new Intent(this, MainActivity2.class);
+        intent.putExtra("wonGame", wonGame);
+        intent.putExtra("time", clock);
+        startActivity(intent);
     }
 
     private void runTimer() {
@@ -164,11 +182,7 @@ public class MainActivity extends AppCompatActivity {
         handler.post(new Runnable() {
             @Override
             public void run() {
-                int hours =clock/3600;
-                int minutes = (clock%3600) / 60;
-                int seconds = clock%60;
-                String time = String.format("%d:%02d:%02d", hours, minutes, seconds);
-                timeView.setText(time);
+                timeView.setText(String.valueOf(clock));
 
                 if (running) {
                     clock++;
@@ -178,22 +192,80 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    private void onUpdateFlagCount(int count) {
+        TextView flagCountTv = findViewById(R.id.textViewFlagCount);
+        flagCountTv.setText(String.valueOf(count));
+    }
+
+    private void onClickFlagOrDig(View view) {
+        TextView tv = (TextView) view;
+        if (isStateFlag) { // if is currently flag --> transform into dig
+            isStateFlag = false;
+            tv.setText(getResources().getString(R.string.pick));
+        } else {
+            isStateFlag = true;
+            tv.setText(getResources().getString(R.string.flag)); // flag icon
+        }
+    }
+
+    private boolean hasWon() {
+        int count = 0;
+        for (int i = 0; i < 12; i++) {
+            for (int j = 0; j < 10; j++) {
+                if (hasRevealed[i][j]) {
+                    count++;
+                }
+            }
+        }
+
+        if (count == 116) {
+            return true;
+        }
+        return false;
+    }
+
     public void onClickTV(View view){
         TextView tv = (TextView) view;
+
         int n = findIndexOfCellTextView(tv);
         int i = n/COLUMN_COUNT; // row idx
         int j = n%COLUMN_COUNT; // col idx
 
-        if (isBomb[i][j]) {
-            tv.setTextColor(Color.GREEN);
-            tv.setBackgroundColor(Color.parseColor("lime"));
-            onEndTimer();
-        } else {
-            int numAdjBomb = numAdjacentMine(i, j);
-            revealTile(mineSweeperGrid[i][j], numAdjBomb);
-            if (numAdjBomb == 0) {
-                revealAllAdjacentBFS(i,j);
+        if (isStateFlag) {
+            if (!hasRevealed[i][j] && flagsLeft > 0 && !placeFlag[i][j] ) {
+                tv.setText(getResources().getString(R.string.flag)); // set it to flag emoji, if it is
+                flagsLeft--;
+                onUpdateFlagCount(flagsLeft);
+                placeFlag[i][j] = true;
+            } else if (placeFlag[i][j]) {
+                placeFlag[i][j] = false;
+                flagsLeft++;
+                tv.setText("");
+                onUpdateFlagCount(flagsLeft);
             }
+        } else { // digging
+            if (!placeFlag[i][j]) { // cannot click on a flag tile
+                if (isBomb[i][j]) {
+                    tv.setText(getResources().getString(R.string.mine));
+                    // tv.setTextColor(Color.GREEN);
+                    tv.setTextColor(Color.GRAY);
+                    tv.setBackgroundColor(Color.LTGRAY);
+                    onEndGame(false);
+                    // has lost transition
+                } else {
+                    hasRevealed[i][j] = true;
+                    int numAdjBomb = numAdjacentMine(i, j);
+                    revealTile(mineSweeperGrid[i][j], numAdjBomb);
+                    if (numAdjBomb == 0) {
+                        revealAllAdjacentBFS(i,j);
+                    }
+                    if (hasWon()) {
+                        onEndGame(true);
+                        // transition to winning page
+                    }
+                }
+            }
+
         }
 //         tv.setText(String.valueOf(i)+String.valueOf(j));
 //                if (tv.getCurrentTextColor() == Color.GRAY) {
